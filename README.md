@@ -46,10 +46,10 @@ python epub2code.py "my_book.epub" -o "my_book_as_code.py" --seed 42
 
 
 - For future possible improvements:
-  - Add more fake code so the text is not as dominant. 
-  - Allow choosing a value for text to code ratio.
+  - Add more fake code so the text is not as dominant. ✅
+  - Allow choosing a value for text to code ratio. ✅
   - Split output into various files to manage line amount.
-  - Avoid treating abbreviations or prefixes as whole sentences (e.g. Mr.)
+  - Avoid treating abbreviations or prefixes as whole sentences (e.g. Mr.) ✅
 
 Feel free to suggest or contribute anything.
 
