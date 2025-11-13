@@ -18,6 +18,23 @@ from bs4 import BeautifulSoup
 # -----------------------
 
 SENT_SPLIT_RE = re.compile(r'(?<=[\.\?\!])\s+(?=[A-Z0-9"“‘\(\[])')
+ABR_DOT = "•"
+
+def mask_abbrev_periods(text: str) -> str:
+    t = text
+    t = re.sub(r"\b(?:Mr|Mrs|Ms|Dr|Prof|Sr|Jr|St|vs|etc)\.", lambda m: m.group(0).replace(".", ABR_DOT), t)
+    t = re.sub(r"\b(?:e\.g|i\.e)\.", lambda m: m.group(0).replace(".", ABR_DOT), t)
+    t = re.sub(r"\bPh\.D\.", lambda m: m.group(0).replace(".", ABR_DOT), t)
+    t = re.sub(r"\bM\.Sc\.", lambda m: m.group(0).replace(".", ABR_DOT), t)
+    t = re.sub(r"\bB\.Sc\.", lambda m: m.group(0).replace(".", ABR_DOT), t)
+    t = re.sub(r"\bM\.A\.", lambda m: m.group(0).replace(".", ABR_DOT), t)
+    t = re.sub(r"\bB\.A\.", lambda m: m.group(0).replace(".", ABR_DOT), t)
+    t = re.sub(r"\bU\.S\.(?:A\.)?", lambda m: m.group(0).replace(".", ABR_DOT), t)
+    t = re.sub(r"\bU\.K\.", lambda m: m.group(0).replace(".", ABR_DOT), t)
+    t = re.sub(r"\b(?:[A-Z]\.){2,3}", lambda m: m.group(0).replace(".", ABR_DOT), t)
+    t = re.sub(r"(?:\b[A-Z]\.\s*){2,}", lambda m: m.group(0).replace(".", ABR_DOT), t)
+    t = re.sub(r"\b[A-Z]\.(?=\s+[A-Z])", lambda m: m.group(0).replace(".", ABR_DOT), t)
+    return t
 
 def clean_whitespace(s: str) -> str:
     s = s.replace('\r', ' ')
@@ -30,9 +47,10 @@ def split_into_sentences(text: str) -> list:
     text = clean_whitespace(text)
     if not text:
         return []
-    parts = SENT_SPLIT_RE.split(text)
+    masked = mask_abbrev_periods(text)
+    parts = SENT_SPLIT_RE.split(masked)
     # Remove extremely short fragments
-    sentences = [p.strip() for p in parts if len(p.strip()) > 1]
+    sentences = [p.replace(ABR_DOT, ".").strip() for p in parts if len(p.strip()) > 1]
     return sentences
 
 def escape_str(s: str) -> str:
@@ -129,6 +147,14 @@ def emit_string_vars(sentences: list, idgen: IdGen, indent: int = 4) -> str:
     for s in sentences:
         var = idgen.next()
         out.append(f"{indent_s}{var} = {escape_str(s)}")
+    out.append("")
+    return "\n".join(out)
+
+def emit_print_lines(sentences: list, indent: int = 4) -> str:
+    indent_s = " " * indent
+    out = []
+    for s in sentences:
+        out.append(f"{indent_s}print(f{escape_str(s)})")
     out.append("")
     return "\n".join(out)
 
@@ -237,7 +263,7 @@ def emit_small_class(class_name: str, sentences:list, idgen: IdGen, indent:int =
 # Sequential chapter builder (preserves book order)
 # -----------------------
 
-def build_chapter_function_sequential(sent_list: list, ch_idx: int, rng: random.Random) -> str:
+def build_chapter_function_sequential(sent_list: list, ch_idx: int, rng: random.Random, text_ratio: float = 0.5) -> str:
     """
     Build a chapter using sequential consumption of sentences (preserves reading order).
     Medium semi-random: decides constructs randomly but takes consecutive sentences for multi-sentence constructs.
@@ -249,6 +275,55 @@ def build_chapter_function_sequential(sent_list: list, ch_idx: int, rng: random.
 
     i = 0
     n = len(sent_list)
+
+    text_ratio = max(0.05, min(0.95, float(text_ratio)))
+    fake_factor = (1.0 - text_ratio) / max(text_ratio, 1e-9)
+
+    def calc_fake_ops(text_lines_count: int) -> int:
+        base = int(fake_factor * max(0, text_lines_count))
+        jitter = rng.randint(0, max(1, int(fake_factor)))
+        return max(0, base + jitter)
+
+    def emit_fake_filler(fake_ops_count: int, indent: int = 4) -> str:
+        indent_s = " " * indent
+        out = []
+        sneak_gap = max(3, int(12 * text_ratio))
+        for _i in range(fake_ops_count):
+            if (_i % sneak_gap == 0) and (i < n):
+                snt = take_next(1)
+                if snt:
+                    r = rng.random()
+                    if r < 0.4:
+                        out.append(f"{indent_s}# {snt[0]}")
+                    elif r < 0.8:
+                        var = idgen.next()
+                        out.append(f"{indent_s}{var} = {escape_str(snt[0])}")
+                    else:
+                        out.append(f"{indent_s}print(f{escape_str(snt[0])})")
+            choice = rng.randint(0, 11)
+            if choice == 0:
+                out.append(f"{indent_s}_f{rng.randint(1,999)} = {rng.randint(0, 100)}")
+            elif choice == 1:
+                out.append(f"{indent_s}_n{rng.randint(1,999)} = sum([j for j in range({rng.randint(5,15)})])")
+            elif choice == 2:
+                out.append(f"{indent_s}def _fn_{rng.randint(1,999)}(x, y, z=0):")
+                out.append(f"{indent_s}    return (x * y) - z + (x ** 2) / (y + 1)")
+            elif choice == 3:
+                out.append(f"{indent_s}[k for k in range({rng.randint(3,7)}) if k % 2 == 0]")
+            elif choice == 4:
+                out.append(f"{indent_s}expEU = [math.exp(beta * (u - maxEU)) for u in EU]")
+            elif choice == 5:
+                out.append(f"{indent_s}moves_count_decay[:] = [gamma * c for c in moves_count_decay]")
+            elif choice == 6:
+                out.append(f"{indent_s}expected_utility_recent = [empirical_prob_recent[(j - 1) % 3] for j in range(3)]")
+            elif choice == 7:
+                out.append(f"{indent_s}expected_utility = [expected_utility_all_time[ii] + b * expected_utility_recent[ii] for ii in range(3)]")
+            elif choice == 8:
+                out.append(f"{indent_s}_score = (alpha * beta) + gamma - (delta / max(1, n)) + (tau ** 2) - theta * omega")
+            else:
+                out.append(f"{indent_s}a, b, c = (x + 1, y * 2 - z, maxEU - minEU)")
+        out.append("")
+        return "\n".join(out)
 
     def take_next(k=1):
         nonlocal i
@@ -267,6 +342,7 @@ def build_chapter_function_sequential(sent_list: list, ch_idx: int, rng: random.
     comments = take_next(first_comments)
     if comments:
         lines.append(emit_comment_lines(comments, indent=4))
+        lines.append(emit_fake_filler(calc_fake_ops(len(comments)), indent=4))
 
     strings = take_next(first_strings)
     if strings:
@@ -278,12 +354,13 @@ def build_chapter_function_sequential(sent_list: list, ch_idx: int, rng: random.
             var_name = f"{idgen.prefix}{start_idx + offset:03d}"
             lines.append(f"    _buffer.append({var_name})")
         lines.append("")
+        lines.append(emit_fake_filler(calc_fake_ops(len(strings)), indent=4))
 
     # chunked mix until consumed
     while i < n:
         choice = rng.choices(
-            population=['comments','strings','ifelse','forloop','match','try','class'],
-            weights=[10, 15, 20, 20, 10, 10, 15],
+            population=['comments','strings','prints','ifelse','forloop','match','try','class'],
+            weights=[10, 12, 12, 20, 20, 10, 10, 15],
             k=1
         )[0]
 
@@ -292,12 +369,21 @@ def build_chapter_function_sequential(sent_list: list, ch_idx: int, rng: random.
             cs = take_next(cnt)
             if cs:
                 lines.append(emit_comment_lines(cs, indent=4))
+                lines.append(emit_fake_filler(calc_fake_ops(len(cs)), indent=4))
 
         elif choice == 'strings':
             cnt = rng.randint(1, 3)
             ss = take_next(cnt)
             if ss:
                 lines.append(emit_string_vars(ss, idgen, indent=4))
+                lines.append(emit_fake_filler(calc_fake_ops(len(ss)), indent=4))
+
+        elif choice == 'prints':
+            cnt = rng.randint(1, 3)
+            ps = take_next(cnt)
+            if ps:
+                lines.append(emit_print_lines(ps, indent=4))
+                lines.append(emit_fake_filler(calc_fake_ops(len(ps)), indent=4))
 
         elif choice == 'ifelse':
             c_comment = take_next(rng.randint(0,1))
@@ -307,6 +393,8 @@ def build_chapter_function_sequential(sent_list: list, ch_idx: int, rng: random.
             false_sents = take_next(false_cnt)
             if c_comment or true_sents or false_sents:
                 lines.append(emit_if_else(c_comment, true_sents, false_sents, idgen, indent=4))
+                tlc = len(c_comment) + len(true_sents) + len(false_sents)
+                lines.append(emit_fake_filler(calc_fake_ops(tlc), indent=4))
 
         elif choice == 'forloop':
             pre_comments = take_next(rng.randint(0,1))
@@ -315,6 +403,8 @@ def build_chapter_function_sequential(sent_list: list, ch_idx: int, rng: random.
             fake_ops = rng.randint(0, 2)
             if pre_comments or loop_sents:
                 lines.append(emit_for_loop(pre_comments, loop_sents, fake_ops, idgen, indent=4))
+                tlc = len(pre_comments) + len(loop_sents)
+                lines.append(emit_fake_filler(calc_fake_ops(tlc), indent=4))
 
         elif choice == 'match':
             ncases = rng.randint(3, 6)
@@ -328,6 +418,8 @@ def build_chapter_function_sequential(sent_list: list, ch_idx: int, rng: random.
                     cases.append((f"case_{ci}", case_sents))
             if cases:
                 lines.append(emit_match_case(cases, idgen, indent=4))
+                tlc = sum((1 if len(s) >= 1 else 0) + (1 if len(s) >= 2 else 0) for _, s in cases)
+                lines.append(emit_fake_filler(calc_fake_ops(tlc), indent=4))
 
         elif choice == 'try':
             try_cnt = rng.randint(1, 3)
@@ -336,6 +428,8 @@ def build_chapter_function_sequential(sent_list: list, ch_idx: int, rng: random.
             except_sents = take_next(exc_cnt)
             if try_sents:
                 lines.append(emit_try_except(try_sents, except_sents, idgen, indent=4))
+                tlc = len(try_sents) + len(except_sents)
+                lines.append(emit_fake_filler(calc_fake_ops(tlc), indent=4))
 
         elif choice == 'class':
             class_cnt = rng.randint(1, 3)
@@ -343,6 +437,7 @@ def build_chapter_function_sequential(sent_list: list, ch_idx: int, rng: random.
             if class_sents:
                 cname = f"Node_{rng.randint(1,999):03d}"
                 lines.append(emit_small_class(cname, class_sents, idgen, indent=4))
+                lines.append(emit_fake_filler(calc_fake_ops(len(class_sents)), indent=4))
 
     # final decorative loop
     lines.append("    for _ in _buffer:")
@@ -355,7 +450,7 @@ def build_chapter_function_sequential(sent_list: list, ch_idx: int, rng: random.
 # Orchestration
 # -----------------------
 
-def compile_book_to_code_fixed(epub_path: str, out_path: str, seed: int = None):
+def compile_book_to_code_fixed(epub_path: str, out_path: str, seed: int = None, text_ratio: float = 0.5):
     chapters = extract_chapters_from_epub(epub_path)
     if not chapters:
         raise RuntimeError("No content found in EPUB.")
@@ -372,7 +467,32 @@ def compile_book_to_code_fixed(epub_path: str, out_path: str, seed: int = None):
 
     out_lines = []
     out_lines.append("# Auto-generated 'codebook' from EPUB")
-    out_lines.append("# Generated by epub2codebook_fixed.py")
+    out_lines.append("# Generated by epub2code.py")
+    out_lines.append("")
+    out_lines.append("import math")
+    out_lines.append("")
+    out_lines.append("alpha = 1.0")
+    out_lines.append("beta = 1.0")
+    out_lines.append("gamma = 0.95")
+    out_lines.append("delta = 0.01")
+    out_lines.append("tau = 2.0")
+    out_lines.append("theta = 0.1")
+    out_lines.append("omega = 0.2")
+    out_lines.append("maxEU = 1.0")
+    out_lines.append("minEU = 0.0")
+    out_lines.append("EU = [0.2, 0.5, 0.8]")
+    out_lines.append("expected_utility_all_time = [0.0, 0.0, 0.0]")
+    out_lines.append("empirical_prob_recent = [0.33, 0.33, 0.34]")
+    out_lines.append("moves_count_decay = [0, 0, 0]")
+    out_lines.append("counts = {'a': 1, 'b': 2, 'c': 3}")
+    out_lines.append("total = sum(counts.values())")
+    out_lines.append("step = 0")
+    out_lines.append("user_id = 'user-000'")
+    out_lines.append("state = 'idle'")
+    out_lines.append("moves = [0, 1, 2, 1, 0]")
+    out_lines.append("x, y, z = (1.0, 2.0, 0.5)")
+    out_lines.append("b = 0.5")
+    out_lines.append("n = 10")
     out_lines.append("")
     out_lines.append("class BookEngine:")
     out_lines.append("    \"\"\"Auto-generated book engine. Open in VS Code for fake-code reading experience.\"\"\"")
@@ -384,7 +504,7 @@ def compile_book_to_code_fixed(epub_path: str, out_path: str, seed: int = None):
         rng = random.Random(global_rng.randint(0, 10**9))
         # DO NOT shuffle: keep original reading order
         pool = list(ch_sent_list)
-        chapter_code = build_chapter_function_sequential(pool, i, rng)
+        chapter_code = build_chapter_function_sequential(pool, i, rng, text_ratio=text_ratio)
         # indent function inside class
         indented = []
         for line in chapter_code.splitlines():
@@ -414,15 +534,17 @@ def main():
     parser.add_argument("epub", help="Path to input .epub file")
     parser.add_argument("-o", "--output", help="Output .py file path", default="book_as_code.py")
     parser.add_argument("--seed", help="Optional random seed (int) for reproducible layout", type=int, default=None)
+    parser.add_argument("--ratio", help="Text-to-code ratio (0.05-0.95)", type=float, default=0.6)
     args = parser.parse_args()
 
     epub_path = args.epub
     out_path = args.output
+    ratio = max(0.05, min(0.95, float(args.ratio)))
     if not os.path.isfile(epub_path):
         print("ERROR: epub file not found:", epub_path)
         return
 
-    compile_book_to_code_fixed(epub_path, out_path, seed=args.seed)
+    compile_book_to_code_fixed(epub_path, out_path, seed=args.seed, text_ratio=ratio)
 
 if __name__ == "__main__":
     main()
