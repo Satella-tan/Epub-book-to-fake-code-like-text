@@ -17,8 +17,10 @@ Intented for reading at work, in class, or whenever you want to fulfill your dre
   - classes  
   - if/else blocks  
   - for loops  
-  - try/except blocks 
-- Optional `--seed` argument to keep the pseudo-random structure consistent  
+  - try/except blocks
+- Inserts math operations taken from my [RPS bot](https://github.com/Satella-tan/rock-paper-scissors-bot)
+- Optional `--seed` argument to keep the pseudo-random structure consistent
+- Optional `--ratio` argument to choose text-to-fakecode ratio between 0.05 and 0.95 the lower the value the more fakecode generated (defaults at 0.6)
 - Works with any EPUB that contains extractable text
 
 ---
@@ -35,7 +37,7 @@ pip install ebooklib beautifulsoup4
 Transform your EPUB to a py file:
 
 ```bash
-python epub2code.py "my_book.epub" -o "my_book_as_code.py" --seed 42
+python epub2code.py "my_book.epub" -o "my_book_as_code.py" --seed 42 --ratio 0.7
 ```
 
 ---
