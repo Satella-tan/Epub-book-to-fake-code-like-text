@@ -11,7 +11,8 @@ Intented for reading at work, in class, or whenever you want to fulfill your dre
 - Converts any `.epub` file into a `.py` file  
 - Preserves sentences using:
     - variable assignments  
-   - comments  
+   - comments
+   - print statements
 - Wraps the text inside pseudo-code structures:
   - functions  
   - classes  
